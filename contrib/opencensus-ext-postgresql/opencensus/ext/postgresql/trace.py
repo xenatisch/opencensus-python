@@ -14,6 +14,7 @@
 
 import inspect
 import logging
+from functools import wraps
 
 import psycopg2
 from psycopg2 import connect as pg_connect
@@ -47,26 +48,31 @@ def connect(*args, **kwargs):
 
 
 def trace_cursor_query(query_func):
+    @wraps(query_func)
     def call(query, *args, **kwargs):
-        _tracer = execution_context.get_opencensus_tracer()
-        if _tracer is not None:
-            # Note that although get_opencensus_tracer() returns a NoopTracer
-            # if no thread local has been set, set_opencensus_tracer() does NOT
-            # protect against setting None to the thread local - be defensive
-            # here
-            _span = _tracer.start_span()
-            _span.name = '{}.query'.format(MODULE_NAME)
-            _span.span_kind = span_module.SpanKind.CLIENT
-            _tracer.add_attribute_to_current_span(
-                '{}.query'.format(MODULE_NAME), query)
-            _tracer.add_attribute_to_current_span(
-                '{}.cursor.method.name'.format(MODULE_NAME),
-                query_func.__name__)
+        tracer = execution_context.get_opencensus_tracer()
 
-        result = query_func(query, *args, **kwargs)
+        if tracer is None:
+            return query_func(query, *args, **kwargs)
 
-        if _tracer is not None:
-            _tracer.end_span()
+        # Note that although get_opencensus_tracer() returns a NoopTracer
+        # if no thread local has been set, set_opencensus_tracer() does NOT
+        # protect against setting None to the thread local - be defensive
+        # here
+        with tracer.span(MODULE_NAME) as span:
+            span.span_kind = span_module.SpanKind.UNSPECIFIED
+            span.add_attribute(f'{MODULE_NAME}.query', query)
+            span.add_attribute(f'{MODULE_NAME}.cursor.method.name', query_func.__name__)
+
+            success = True
+            try:
+                result = query_func(query, *args, **kwargs)
+            except Exception as err:
+                success = False
+                raise err
+            finally:
+                span.add_attribute(f'{MODULE_NAME}.success', success)
+
         return result
 
     return call
