@@ -59,19 +59,22 @@ def trace_cursor_query(query_func):
         # if no thread local has been set, set_opencensus_tracer() does NOT
         # protect against setting None to the thread local - be defensive
         # here
-        with tracer.span(MODULE_NAME) as span:
-            span.span_kind = span_module.SpanKind.UNSPECIFIED
-            span.add_attribute(f'{MODULE_NAME}.query', query)
-            span.add_attribute(f'{MODULE_NAME}.cursor.method.name', query_func.__name__)
+        span = tracer.start_span()
+        span.name = "database"
+        span.span_kind = span_module.SpanKind.UNSPECIFIED
+        span.add_attribute('dependency.type', MODULE_NAME)
+        span.add_attribute(f'{MODULE_NAME}.query', query)
+        span.add_attribute(f'{MODULE_NAME}.cursor.method.name', query_func.__name__)
 
-            success = True
-            try:
-                result = query_func(query, *args, **kwargs)
-            except Exception as err:
-                success = False
-                raise err
-            finally:
-                span.add_attribute(f'{MODULE_NAME}.success', success)
+        success = True
+        try:
+            result = query_func(query, *args, **kwargs)
+        except Exception as err:
+            success = False
+            raise err
+        finally:
+            span.add_attribute(f'{MODULE_NAME}.success', success)
+            tracer.end_span()
 
         return result
 
