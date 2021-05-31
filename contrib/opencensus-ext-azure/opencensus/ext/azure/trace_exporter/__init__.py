@@ -103,9 +103,7 @@ class AzureExporter(BaseExporter, ProcessorMixin, TransportMixin):
             if 'http.status_code' in sd.attributes:
                 status_code = sd.attributes['http.status_code']
                 data.responseCode = str(status_code)
-                data.success = (
-                    status_code >= 200 and status_code <= 399
-                )
+                data.success = status_code >= 200 and status_code <= 399
             elif sd.status.code == 0:
                 data.success = True
         else:
@@ -142,7 +140,11 @@ class AzureExporter(BaseExporter, ProcessorMixin, TransportMixin):
                 if 'http.status_code' in sd.attributes:
                     status_code = sd.attributes["http.status_code"]
                     data.resultCode = str(status_code)
-                    data.success = 200 <= status_code < 400
+                    try:
+                        data.success = 200 <= int(status_code) < 400
+                    except (ValueError, TypeError):
+                        data.success = status_code
+
                 elif sd.status.code == 0:
                     data.success = True
             else:
